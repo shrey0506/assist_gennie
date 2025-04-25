@@ -1,0 +1,79 @@
+h
+Perfect! Here's how to organize your files under app/chat_history:
+
+
+---
+
+Folder Structure
+
+app/
+├── chat_history/
+│   ├── __init__.py
+│   └── store.py         # Contains SQLite logic for chat history
+
+
+---
+
+store.py in app/chat_history/
+
+import sqlite3
+import os
+
+# Path to the database file
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "chat_history.db")
+
+# SQLite connection
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+cursor = conn.cursor()
+
+# Create table if it doesn't exist
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS chat_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL,
+    user_input TEXT NOT NULL,
+    agent_response TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+""")
+conn.commit()
+
+def get_chat_history(conversation_id: str):
+    cursor.execute("""
+        SELECT user_input, agent_response 
+        FROM chat_history 
+        WHERE conversation_id = ? 
+        ORDER BY timestamp ASC
+    """, (conversation_id,))
+    rows = cursor.fetchall()
+    return [{"user": row[0], "agent": row[1]} for row in rows]
+
+def add_to_chat_history(conversation_id: str, user_input: str, agent_response: str):
+    cursor.execute("""
+        INSERT INTO chat_history (conversation_id, user_input, agent_response)
+        VALUES (?, ?, ?)
+    """, (conversation_id, user_input, agent_response))
+    conn.commit()
+
+
+---
+
+Usage in view.py
+
+In your FastAPI route file (view.py), import like this:
+
+from app.chat_history.store import get_chat_history, add_to_chat_history
+
+
+---
+
+Let me know if you'd like to add:
+
+A DB init script
+
+Export-to-JSON endpoint
+
+History purge feature (e.g., per user or expired sessions)
+
+
