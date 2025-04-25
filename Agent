@@ -1,0 +1,107 @@
+Thanks! Yes, I now see you're using the vertexai.agent_engines.LanggraphAgent and reading config from llm_config.yaml. Based on your setup and image, I'll provide you with a full solution that:
+
+1. Detects the intent using the LangGraph agent.
+
+
+2. If it's code generation, routes the query to the agent for code output.
+
+
+3. Maintains chat history using conversation_id (as seen in your initial endpoint).
+
+
+4. Falls back to your existing workflow for non-code-gen tasks.
+
+
+
+
+---
+
+1. Add Intent Detection and Code Generation
+
+Here’s an updated agent wrapper using the structure from your image:
+
+from vertexai import agent_engines
+import os
+import yaml
+
+base_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(base_dir, "config/llm_config.yaml")
+
+with open(config_path, "r", encoding="utf-8") as file:
+    config = yaml.safe_load(file)
+
+class LangGraphAgentHandler:
+    """Handles LangGraph agent operations."""
+
+    @staticmethod
+    def detect_intent(question: str) -> str:
+        """Use LLM to determine intent."""
+        intent_query = f"""Detect the intent of this query:
+        Query: "{question}"
+        Possible intents: code_generation, summarization, general_query
+        Respond only with the intent keyword."""
+        
+        agent = agent_engines.LanggraphAgent(
+            model_config=config["model_name"],
+            model_kwargs=config["model_kwargs"]
+        )
+        result = agent.query(input=intent_query)
+        return result.lower().strip()
+
+    @staticmethod
+    def generate_code(question: str, chat_history: list = None) -> str:
+        """Use LangGraph agent to generate code."""
+        agent = agent_engines.LanggraphAgent(
+            model_config=config["model_name"],
+            model_kwargs=config["model_kwargs"]
+        )
+        response = agent.query(input=question, chat_history=chat_history or [])
+        return response
+
+
+---
+
+2. Update Your Chat Endpoint
+
+Inside your FastAPI route, update the logic like so:
+
+from .agents import LangGraphAgentHandler  # assuming saved as agents.py
+
+@router.post("/assist-genie/api/v1/chat")
+def chat_endpoint(...):
+    ...
+    try:
+        # Detect intent
+        intent = LangGraphAgentHandler.detect_intent(question)
+
+        if intent == "code_generation":
+            # Prepare chat history from conversation ID (optional but useful)
+            chat_history = get_chat_history(conversation_id)  # implement this function as needed
+            code_response = LangGraphAgentHandler.generate_code(question, chat_history)
+            return {"code": code_response}
+
+        # Continue with existing workflow (summarization, etc.)
+        ...
+
+
+---
+
+3. (Optional) Maintaining Chat History
+
+If you're not already tracking conversation history, here's a placeholder example:
+
+chat_memory = {}
+
+def get_chat_history(conversation_id: str):
+    return chat_memory.get(conversation_id, [])
+
+def add_to_chat_history(conversation_id: str, user_input: str, response: str):
+    chat_memory.setdefault(conversation_id, []).append({"user": user_input, "agent": response})
+
+Integrate it right after you get the response and before returning it.
+
+
+---
+
+Would you like help implementing chat history in a persistent way (e.g. using a database or Redis)? Or should I show how to test this code flow?
+
