@@ -1,0 +1,115 @@
+h
+Thanks for sharing the screenshot. Your overall flow looks good and you're on the right track with intent-based routing. Here's a quick breakdown of what’s correct and what needs tweaking:
+
+
+---
+
+What’s good:
+
+Intent detection with LangGraphAgentHandler.detect_intent(question)
+
+Separate path for "code_generation" to invoke generate_code(...)
+
+add_to_chat_history(...) persists the interaction
+
+Fallback to the regular flow with summarization/chatbot when not code generation — solid structure.
+
+
+
+---
+
+Recommended Fixes / Suggestions:
+
+1. Return or use code_response: You should either return or assign it to response properly:
+
+response = code_response
+
+Or else your response variable might be None in the return path.
+
+
+2. Output block must be used in the "code_generation" path: The current structure sets output, ref, etc. only in the else block. You'll want the same output formatting even when it’s code generation.
+
+So, outside the if-else, do:
+
+ref = "LLM Generated Response"
+output = {
+    "question": question,
+    "feedback": response,
+    "reference": ref,
+    "category": "code",
+    "name": model_name,
+    "version": "v1.0"
+}
+
+
+3. Cache update for code gen (optional): If you want to cache code generation too (like for repeat questions), add:
+
+cache_manager.set(question, json.dumps(response))
+
+
+
+
+---
+
+Suggested Reorganization (for clarity)
+
+intent = LangGraphAgentHandler.detect_intent(question)
+
+if intent == "code_generation":
+    chat_history = get_chat_history(conversation_id)
+    code_response = LangGraphAgentHandler.generate_code(question, chat_history)
+    add_to_chat_history(conversation_id, question, code_response)
+
+    response = code_response
+    ref = "LLM Generated Response"
+    category = "code"
+
+else:
+    cached_response = cache_manager.get(question)
+    if cached_response:
+        return json.loads(cached_response)
+
+    chatbot_service = ChatbotService(
+        pdf_path=PDF_PATH,
+        config=config,
+        provider_name=model_name,
+        question=question,
+    )
+    result = ask_question(question, user_id, conversation_id)
+    response = str(result["response"])
+    ref = result["reference"]
+    
+    if is_sensitive_query(question):
+        response = (
+            "I'm sorry, but I cannot assist with that request.\n"
+            "My purpose is to provide helpful and unbiased information..."
+        )
+    add_to_chat_history(conversation_id, question, response)
+    category = "general"
+
+output = {
+    "question": question,
+    "feedback": response,
+    "reference": ref,
+    "category": category,
+    "name": model_name,
+    "version": "v1.0"
+}
+
+formatted_output = json.dumps(output)
+cache_manager.set(question, formatted_output)
+
+return formatted_output
+
+
+---
+
+Let me know if you want to:
+
+Log chat history to a file or dashboard
+
+Add async DB handling
+
+Introduce retry logic or feedback score on code responses
+
+
