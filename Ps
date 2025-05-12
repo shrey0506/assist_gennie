@@ -1,0 +1,107 @@
+ps
+Absolutely — here's a refactored and production-grade version of your sandp_procedure function. This version includes:
+
+Proper docstrings
+
+Logging
+
+Input validation
+
+Error handling
+
+Use of Optional[str]
+
+Slight structure improvement for readability
+
+
+from typing import Type, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+def sandp_procedure(
+    client: Type[BqBase],
+    bq_project: str,
+    prod_dataset: str,
+    insert_flag: bool,
+    insert_query: Optional[str],
+    merge_flag: bool,
+    truncate_flag: bool,
+    truncate_query: Optional[str],
+    merge_query: Optional[str]
+) -> None:
+    """
+    Performs a sequence of BigQuery operations: truncate, insert, and merge.
+
+    Parameters:
+    - client: BigQuery client class.
+    - bq_project: GCP project ID.
+    - prod_dataset: BigQuery dataset name.
+    - insert_flag: Whether to perform the insert operation.
+    - insert_query: The query name (or path) to use for the insert SQL.
+    - merge_flag: Whether to perform the merge operation.
+    - truncate_flag: Whether to perform the truncate operation.
+    - truncate_query: The table name or SQL file name for truncation.
+    - merge_query: The query name (or path) to use for the merge SQL.
+
+    Returns:
+    - None
+    """
+
+    try:
+        if truncate_flag:
+            if not truncate_query:
+                raise ValueError("truncate_query is required when truncate_flag is True.")
+            logger.info("Truncating table using: %s", truncate_query)
+            truncate(
+                client=client,
+                bq_project=bq_project,
+                prod_dataset=prod_dataset,
+                truncate_table_name=truncate_query
+            )
+
+        if insert_flag:
+            if not insert_query:
+                raise ValueError("insert_query is required when insert_flag is True.")
+            logger.info("Performing insert using query: %s", insert_query)
+            insert_sql_path = return_sql_path(query_name=insert_query)
+            insert_sql = read_sql_file(insert_sql_path)
+            insert_sql = insert_sql.format(
+                BQ_PROJECT=bq_project,
+                BQ_DATASET_from=prod_dataset
+            )
+            execute_query(client, insert_sql)
+
+        if merge_flag:
+            if not merge_query:
+                raise ValueError("merge_query is required when merge_flag is True.")
+            logger.info("Performing merge using query: %s", merge_query)
+            merge_sql_path = return_sql_path(query_name=merge_query)
+            merge_sql = read_sql_file(merge_sql_path)
+            merge_sql = merge_sql.format(
+                BQ_PROJECT=bq_project,
+                BQ_DATASET_from=prod_dataset
+            )
+            execute_query(client, merge_sql)
+
+    except Exception as e:
+        logger.exception("An error occurred in sandp_procedure: %s", e)
+        raise
+
+
+---
+
+Requirements:
+
+Make sure you’ve defined/imported:
+
+truncate, return_sql_path, read_sql_file, and execute_query
+
+BqBase class/interface
+
+
+Configure the logger appropriately in your main application or script.
+
+
+Let me know if you'd like me to help modularize the flags into smaller functions or classes.
+
