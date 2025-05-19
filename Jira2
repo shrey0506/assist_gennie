@@ -1,0 +1,18 @@
+k
+# Add this function before workflow setup
+def jira_code_generation(state: GraphState) -> GraphState:
+    try:
+        query = state["question"]
+        conv_id = state["conversation_id"]
+        history = get_chat_history(conv_id)
+        
+        jira_details = LangGraphAgentHandler.extract_jira_pattern(query)
+        prompt = jira_prompt_code_gen_prompt(jira_details)
+        response = LangGraphAgentHandler.generate_code(prompt, history, model_config[state["model"]])
+        add_to_chat_history(conv_id, query, response)
+        
+        return {"question": query, "response": response, "reference": ["JIRA Code"]}
+    except Exception as e:
+        return {"question": query, "response": f"JIRA Error: {str(e)}", "reference": []}
+
+# Add this BEFORE workflow configuration
