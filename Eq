@@ -1,0 +1,165 @@
+k
+# agent.py
+from typing import List, Optional, Dict, Any, TypedDict
+from typing_extensions import TypedDict
+from langgraph.graph import END, StateGraph
+from app.controllers import set_config_location
+from app.integrations.gemini_integration import GeminiEmbeddings, GeminiLLM
+from app.integrations.llamaintegration import LlamaEmbeddings, LlamaLLm
+from app.controllers.llmfactory import LLMFactory
+from app.chat.history.chat_history import get_chat_history, add_to_chat_history
+import yaml
+
+# Load config
+CONFIG_PATH = "config/llm.yaml"
+config = set_config_location()
+
+with open(CONFIG_PATH, "r", encoding="utf-8") as file:
+    model_config = yaml.safe_load(file)
+
+class GraphState(TypedDict):
+    question: Optional[str]
+    user_id: Optional[str]
+    conversation_id: Optional[str]
+    classification: Optional[str]
+    response: Optional[str]
+    retrieved_docs: Optional[List[str]]
+    vector_search_results: Optional[List[str]]
+    llm_output: Optional[str]  # Fixed typo from 'lin_output'
+    web_search_results: Optional[str]
+    reference: Optional[str]
+    model: Optional[str]
+
+# Initialize workflow
+workflow = StateGraph(GraphState)
+
+def classify_query(state: GraphState) -> GraphState:
+    query = state["question"]
+    conv_id = state["conversation_id"]
+    
+    # Get and format chat history
+    history = get_chat_history(conv_id)
+    history_context = " | ".join([f"User:{h['user']}, Agent:{h['agent']}" for h in history])
+    enhanced_query = f"{query} [Context: {history_context}]"
+    
+    # JIRA detection with history
+    jira_details = LangGraphAgentHandler.extract_jira_pattern(enhanced_query)
+    if jira_details:
+        add_to_chat_history(conv_id, query, "JIRA pattern detected")
+        return {"classification": "jira_code_generation", **state}
+    
+    # Intent detection with context
+    intent = LangGraphAgentHandler.detect_intent(enhanced_query, history, model_config[state["model"]])
+    if intent == 'code_generation':
+        add_to_chat_history(conv_id, query, "Code generation intent")
+        return {"classification": "code_generation", **state}
+    
+    # History-aware routing
+    route = embeddings.history_aware_router(enhanced_query, history)
+    return {"classification": route, **state}
+
+def query_database(state: GraphState) -> GraphState:
+    conv_id = state["conversation_id"]
+    history = get_chat_history(conv_id)
+    
+    # Context-aware search
+    llm = LLMFactory(config, state["model"]).get_llm()
+    results = llm.vector_search(
+        state["question"], 
+        context=[h["agent"] for h in history[-3:]]  # Last 3 responses as context
+    )
+    
+    if results:
+        add_to_chat_history(conv_id, state["question"], f"Found {len(results)} relevant documents")
+        return {"response": results, **state}
+    return {"classification": "general", **state}
+
+def code_generation(state: GraphState) -> GraphState:
+    conv_id = state["conversation_id"]
+    history = get_chat_history(conv_id)
+    
+    try:
+        # Generate with full context
+        response = LangGraphAgentHandler.generate_code(
+            state["question"], 
+            chat_history=history,
+            model_config=model_config[state["model"]]
+        )
+        add_to_chat_history(conv_id, state["question"], response)
+        return {"response": response, "reference": ["Generated Code"], **state}
+    except Exception as e:
+        add_to_chat_history(conv_id, state["question"], f"Code Error: {str(e)}")
+        return {"response": f"Error: {str(e)}", **state}
+
+def jira_code_generation(state: GraphState) -> GraphState:
+    conv_id = state["conversation_id"]
+    history = get_chat_history(conv_id)
+    
+    try:
+        jira_details = LangGraphAgentHandler.extract_jira_pattern(state["question"])
+        response = LangGraphAgentHandler.generate_code(
+            jira_prompt_code_gen_prompt(jira_details),
+            chat_history=history,
+            model_config=model_config[state["model"]]
+        )
+        add_to_chat_history(conv_id, state["question"], response)
+        return {"response": response, "reference": ["JIRA Code"], **state}
+    except Exception as e:
+        add_to_chat_history(conv_id, state["question"], f"JIRA Error: {str(e)}")
+        return {"response": f"JIRA Error: {str(e)}", **state}
+
+def answer_user(state: GraphState) -> GraphState:
+    if "response" in state:
+        add_to_chat_history(
+            state["conversation_id"],
+            state["question"],
+            state["response"]
+        )
+    return state
+
+# Workflow setup
+workflow.add_node("classify_query", classify_query)
+workflow.add_node("query_database", query_database)
+workflow.add_node("code_generation", code_generation)
+workflow.add_node("jira_code_generation", jira_code_generation)
+workflow.add_node("answer_user", answer_user)
+
+workflow.add_conditional_edges(
+    "classify_query",
+    lambda state: state.get("classification", "general"),
+    {
+        "jira_code_generation": "jira_code_generation",
+        "code_generation": "code_generation",
+        "document": "query_database",
+        "confluence": "query_database",
+        "general": "query_database"
+    }
+)
+
+workflow.add_edge("jira_code_generation", "answer_user")
+workflow.add_edge("code_generation", "answer_user")
+workflow.add_edge("query_database", "answer_user")
+workflow.add_edge("answer_user", END)
+
+workflow.set_entry_point("classify_query")
+compiled_workflow = workflow.compile()
+
+def ask_question(query: str, user_id: str, conversation_id: str, model: str) -> Dict:
+    # Initialize with existing history
+    initial_state = {
+        "question": query,
+        "user_id": user_id,
+        "conversation_id": conversation_id,
+        "model": model,
+        "classification": None,
+        "response": None
+    }
+    
+    result = compiled_workflow.invoke(initial_state)
+    
+    # Return final response with recent history
+    return {
+        "response": result.get("response"),
+        "classification": result.get("classification"),
+        "history": get_chat_history(conversation_id)[-5:]
+    }
