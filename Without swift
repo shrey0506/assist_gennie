@@ -1,0 +1,30 @@
+m
+def predict_currencies(new_df):
+    # Extract features from new data (no SWIFT columns)
+    new_sender = pd.json_normalize(new_df['Sender_Acc_No'].apply(extract_account_features))
+    new_bene = pd.json_normalize(new_df['Bene_Acc_No'].apply(extract_account_features))
+    
+    # Preprocess
+    new_numeric = scaler.transform(
+        pd.concat([new_sender[['length', 'has_hyphen', 'is_numeric']], 
+                  new_bene[['length', 'has_hyphen', 'is_numeric']]])
+    )
+    new_prefix_suffix = encoder.transform(
+        pd.concat([new_sender[['prefix', 'suffix']], 
+                  new_bene[['prefix', 'suffix']]])
+    ).toarray()
+    
+    new_X = np.hstack([new_numeric, new_prefix_suffix])
+    
+    # Predict
+    return model.predict(new_X)
+
+# Example usage
+new_data = pd.DataFrame({
+    'Sender_Acc_No': ['12345678', '021-987654321'],
+    'Bene_Acc_No': ['87654321', '987654321']
+})
+
+predicted_currencies = predict_currencies(new_data)
+print(pd.DataFrame(predicted_currencies, 
+                   columns=['Predicted_Sender_Currency', 'Predicted_Bene_Currency']))
