@@ -1,0 +1,24 @@
+pr
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+# Normalize features
+sender_features = pd.json_normalize(df['Sender_Features'])
+bene_features = pd.json_normalize(df['Bene_Features'])
+
+# One-hot encode prefix/suffix
+encoder = OneHotEncoder(max_categories=20, handle_unknown='ignore')
+prefix_suffix_encoded = encoder.fit_transform(
+    pd.concat([sender_features[['prefix', 'suffix']], 
+              bene_features[['prefix', 'suffix']])
+).toarray()
+
+# Scale numeric features
+scaler = StandardScaler()
+numeric_features = scaler.fit_transform(
+    pd.concat([sender_features[['length', 'has_hyphen', 'is_numeric']], 
+              bene_features[['length', 'has_hyphen', 'is_numeric']]])
+)
+
+# Combine features
+X = np.hstack([numeric_features, prefix_suffix_encoded])
+y = df[['swift_SENDER_CURRENCY', 'swift_RECEIVER_CURRENCY']]
