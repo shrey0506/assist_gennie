@@ -1,0 +1,41 @@
+g
+# Country Code → Currency Code Mapping
+country_to_currency = {
+    # Europe
+    'GB': 'GBP',  # United Kingdom (British Pound)
+    'DE': 'EUR',  # Germany (Euro)
+    'FR': 'EUR',  # France (Euro)
+    'IT': 'EUR',  # Italy (Euro)
+    'ES': 'EUR',  # Spain (Euro)
+    'NL': 'EUR',  # Netherlands (Euro)
+    'CH': 'CHF',  # Switzerland (Swiss Franc)
+    'SE': 'SEK',  # Sweden (Swedish Krona)
+    'NO': 'NOK',  # Norway (Norwegian Krone)
+    'DK': 'DKK',  # Denmark (Danish Krone)
+    
+    # Americas
+    'US': 'USD',  # United States (US Dollar)
+    'CA': 'CAD',  # Canada (Canadian Dollar)
+    'MX': 'MXN',  # Mexico (Mexican Peso)
+    'BR': 'BRL',  # Brazil (Brazilian Real)
+    
+    # Asia-Pacific
+    'CN': 'CNY',  # China (Chinese Yuan)
+    'JP': 'JPY',  # Japan (Japanese Yen)
+    'IN': 'INR',  # India (Indian Rupee)
+    'AU': 'AUD',  # Australia (Australian Dollar)
+    'NZ': 'NZD',  # New Zealand (New Zealand Dollar)
+    'SG': 'SGD',  # Singapore (Singapore Dollar)
+    'HK': 'HKD',  # Hong Kong (Hong Kong Dollar)
+    'KR': 'KRW',  # South Korea (South Korean Won)
+    
+    # Middle East & Africa
+    'AE': 'AED',  # UAE (UAE Dirham)
+    'SA': 'SAR',  # Saudi Arabia (Saudi Riyal)
+    'ZA': 'ZAR',  # South Africa (South African Rand)
+    'TR': 'TRY',  # Turkey (Turkish Lira)
+    'RU': 'RUB',  # Russia (Russian Ruble)
+    
+    # Default for unknown/missing
+    'Unknown': 'Unknown'
+}
