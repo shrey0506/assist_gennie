@@ -1,0 +1,45 @@
+from sklearn.metrics import confusion_matrix, classification_report, precision_score
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Predict on test data
+y_pred = model.predict(X_test)
+
+# Split predictions and true labels into sender and receiver
+y_pred_sender = y_pred[:, 0]  # Predicted sender currencies
+y_pred_receiver = y_pred[:, 1]  # Predicted receiver currencies
+
+y_true_sender = y_test.iloc[:, 0]  # True sender currencies
+y_true_receiver = y_test.iloc[:, 1]  # True receiver currencies
+
+# Generate confusion matrices
+def plot_confusion_matrix(y_true, y_pred, title):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=model.estimators_[0].classes_, 
+                yticklabels=model.estimators_[0].classes_)
+    plt.title(f'Confusion Matrix: {title}')
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.show()
+
+# For Sender Currency
+plot_confusion_matrix(y_true_sender, y_pred_sender, 'Sender Currency')
+
+# For Receiver Currency
+plot_confusion_matrix(y_true_receiver, y_pred_receiver, 'Receiver Currency')
+
+# Calculate precision (macro-averaged)
+precision_sender = precision_score(y_true_sender, y_pred_sender, average='macro')
+precision_receiver = precision_score(y_true_receiver, y_pred_receiver, average='macro')
+
+print(f"Sender Currency Precision (Macro): {precision_sender:.2f}")
+print(f"Receiver Currency Precision (Macro): {precision_receiver:.2f}")
+
+# Detailed class-wise metrics
+print("\nSender Currency Report:")
+print(classification_report(y_true_sender, y_pred_sender))
+
+print("\nReceiver Currency Report:")
+print(classification_report(y_true_receiver, y_pred_receiver))
