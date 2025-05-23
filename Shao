@@ -1,0 +1,10 @@
+dha
+import shap
+
+# Explain predictions
+explainer = shap.TreeExplainer(model.estimators_[0])
+shap_values = explainer.shap_values(X_test)
+
+# Plot global feature importance
+shap.summary_plot(shap_values[0], X_test, 
+                  feature_names=encoder.get_feature_names_out())
