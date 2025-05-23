@@ -1,0 +1,39 @@
+def predict_currencies(new_df):
+    # Extract features
+    new_sender = pd.json_normalize(new_df['sender_acc_feature'].apply(extract_acc_features))
+    new_bene = pd.json_normalize(new_df['Bene_features'].apply(extract_acc_features))
+    
+    # Fix 1: Add prefixes before concatenation
+    new_sender = new_sender[['length', 'has_hyphen', 'is_numeric']].add_prefix('sender_')
+    new_bene = new_bene[['length', 'has_hyphen', 'is_numeric']].add_prefix('bene_')
+    
+    # Fix 2: Use list of DataFrames in pd.concat
+    numeric_features = pd.concat([
+        new_sender,
+        new_bene
+    ], axis=1)
+    
+    # Fix 3: Use actual scaler feature names (replace with your saved names)
+    scaler_feature_names = [
+        'sender_length', 'sender_has_hyphen', 'sender_is_numeric',
+        'bene_length', 'bene_has_hyphen', 'bene_is_numeric'
+    ]
+    numeric_features = numeric_features[scaler_feature_names]
+    
+    new_numeric = scaler.transform(numeric_features)
+    
+    # Fix 4: Handle prefix/suffix features
+    sender_cat = new_sender[['prefix', 'suffix']].add_prefix('sender_')
+    bene_cat = new_bene[['prefix', 'suffix']].add_prefix('bene_')
+    prefix_suffix_features = pd.concat([sender_cat, bene_cat], axis=1)
+    
+    new_prefix_suffix = encoder.transform(prefix_suffix_features).toarray()
+    
+    new_X = np.hstack([new_numeric, new_prefix_suffix])
+    return model.predict(new_X)
+
+# Usage
+new_data = dataset.copy()  # Replace with your actual dataframe
+predicted_currencies = predict_currencies(new_data)
+new_data['Pred_sender_currency'] = predicted_currencies[:,0]
+new_data['Pred_bene_currency'] = predicted_currencies[:,1]
