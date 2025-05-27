@@ -1,0 +1,84 @@
+s
+import plotly.graph_objects as go
+
+# Prepare data using your existing variables
+lloyds_flows = business_forwarded_by_lloyds.to_dict()
+non_lloyds_flows = business_forwarded_by_non_lloyds.to_dict()
+
+# Get unique agents from both flows
+all_agents = list(set(list(lloyds_flows.keys()) + list(non_lloyds_flows.keys())))
+
+# Create node structure based on your labels
+nodes = [
+    *all_agents,
+    "Forwarded by Lloyds",
+    "Forwarded by Non-Lloyds",
+    "Business Value"
+]
+
+# Create node index mapping
+node_indices = {node: idx for idx, node in enumerate(nodes)}
+
+# Build links
+sources = []
+targets = []
+values = []
+
+# Add agent -> forwarding category flows
+for agent, amount in lloyds_flows.items():
+    sources.append(node_indices[agent])
+    targets.append(node_indices["Forwarded by Lloyds"])
+    values.append(amount)
+
+for agent, amount in non_lloyds_flows.items():
+    sources.append(node_indices[agent])
+    targets.append(node_indices["Forwarded by Non-Lloyds"])
+    values.append(amount)
+
+# Add forwarding -> business value flows
+total_lloyds = sum(lloyds_flows.values())
+total_non_lloyds = sum(non_lloyds_flows.values())
+
+sources += [
+    node_indices["Forwarded by Lloyds"],
+    node_indices["Forwarded by Non-Lloyds"]
+]
+targets += [
+    node_indices["Business Value"],
+    node_indices["Business Value"]
+]
+values += [total_lloyds, total_non_lloyds]
+
+# Calculate percentages
+total_value = sum(values)
+percentages = [(v / total_value) * 100 for v in values]
+hover_text = [f"Amount: £{v:,.0f}<br>Share: {p:.1f}%" for v, p in zip(values, percentages)]
+
+# Create Sankey chart
+fig = go.Figure(go.Sankey(
+    node=dict(
+        pad=25,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=nodes,
+        hovertemplate="%{label}<extra></extra>"
+    ),
+    link=dict(
+        source=sources,
+        target=targets,
+        value=values,
+        customdata=hover_text,
+        hovertemplate="%{customdata}<extra></extra>",
+        label=[f"{p:.1f}%" for p in percentages],
+        labelposition="inside"
+    )
+))
+
+fig.update_layout(
+    title_text="GBP Conversion Flow Analysis",
+    font=dict(size=14),
+    height=800,
+    margin=dict(t=80, l=50, r=50, b=20)
+)
+
+fig.show()
