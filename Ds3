@@ -1,0 +1,132 @@
+import pandas as pd
+import plotly.graph_objects as go
+import numpy as np
+import plotly.express as px
+
+# Sample data preparation (replace with your actual DataFrame)
+data = {
+    'Sender': ['Stable Bank Zamba Ltd.', 'FirstBank Bank Limited', 'Commonwealth Bank of Australia', 'LUOIDS'] * 25,
+    'Converting Agent': ['LUOIDS', 'CUA DE ANDROSO DE POLLENSA', 'Commonwealth Bank of Australia', 'FirstBank Bank Limited'] * 25,
+    'Creditor Bank': ['CUA DE ANDROSO DE POLLENSA', 'LUOIDS', 'Stable Bank Zamba Ltd.', 'Commonwealth Bank of Australia'] * 25
+}
+df_converted_after = pd.DataFrame(data)
+
+# Get top 10 values for each column
+top_10_sender = df_converted_after['Sender'].value_counts().nlargest(10).index.tolist()
+top_10_converting = df_converted_after['Converting Agent'].value_counts().nlargest(10).index.tolist()
+top_10_creditor = df_converted_after['Creditor Bank'].value_counts().nlargest(10).index.tolist()
+
+# Filter DataFrame to include only top 10 entries
+filtered = df_converted_after[
+    df_converted_after['Sender'].isin(top_10_sender) &
+    df_converted_after['Converting Agent'].isin(top_10_converting) &
+    df_converted_after['Creditor Bank'].isin(top_10_creditor)
+]
+
+# Create node labels
+node_labels = top_10_sender + top_10_converting + top_10_creditor
+
+# Create dictionaries for node positions
+sender_dict = {name: i for i, name in enumerate(top_10_sender)}
+converting_dict = {name: i + len(top_10_sender) for i, name in enumerate(top_10_converting)}
+creditor_dict = {name: i + len(top_10_sender) + len(top_10_converting) for i, name in enumerate(top_10_creditor)}
+
+# Prepare link data
+links = []
+
+# Sender -> Converting Agent flows
+sender_converting = filtered.groupby(['Sender', 'Converting Agent']).size().reset_index(name='count')
+for _, row in sender_converting.iterrows():
+    links.append({
+        'source': sender_dict[row['Sender']],
+        'target': converting_dict[row['Converting Agent']],
+        'value': row['count']
+    })
+
+# Converting Agent -> Creditor Bank flows
+converting_creditor = filtered.groupby(['Converting Agent', 'Creditor Bank']).size().reset_index(name='count')
+for _, row in converting_creditor.iterrows():
+    links.append({
+        'source': converting_dict[row['Converting Agent']],
+        'target': creditor_dict[row['Creditor Bank']],
+        'value': row['count']
+    })
+
+# Generate distinct colors for each node group
+sender_colors = px.colors.sample_colorscale("Blues", np.linspace(0, 1, len(top_10_sender)))
+converting_colors = px.colors.sample_colorscale("Greens", np.linspace(0, 1, len(top_10_converting)))
+creditor_colors = px.colors.sample_colorscale("Oranges", np.linspace(0, 1, len(top_10_creditor)))
+node_colors = sender_colors + converting_colors + creditor_colors
+
+# Create Sankey diagram with vertical orientation
+fig = go.Figure(go.Sankey(
+    node=dict(
+        pad=30,  # Increased padding for better spacing
+        thickness=15,
+        line=dict(color="black", width=0.5),
+        label=node_labels,
+        color=node_colors,  # Assign distinct colors
+        x=[0] * len(top_10_sender) + [0.5] * len(top_10_converting) + [1] * len(top_10_creditor),
+        # Increased spacing for Converting Agents (y positions)
+        y=(
+            [i/(len(top_10_sender) - 0.01) for i in range(len(top_10_sender))] + 
+            [i/(len(top_10_converting) - 0.5) for i in range(len(top_10_converting))] +  # Increased denominator for more space
+            [i/(len(top_10_creditor) - 0.01) for i in range(len(top_10_creditor))]
+    ),
+    link=dict(
+        source=[link['source'] for link in links],
+        target=[link['target'] for link in links],
+        value=[link['value'] for link in links],
+        color="rgba(150, 150, 150, 0.3)"  # Light gray for links
+    ),
+    arrangement="freeform",
+    orientation="h"
+))
+
+# Update layout with annotations
+fig.update_layout(
+    title=dict(
+        text='Payment Flow: Sender → Converting Agent → Creditor Bank',
+        x=0.5,
+        y=0.95,
+        xanchor='center',
+        font=dict(size=20)
+    ),
+    font=dict(size=12, family="Arial"),
+    height=800,
+    width=1000,
+    xaxis=dict(showgrid=False, zeroline=False, visible=False),
+    yaxis=dict(showgrid=False, zeroline=False, visible=False),
+    plot_bgcolor='white',
+    annotations=[
+        dict(
+            x=0,
+            y=1.05,
+            xref='paper',
+            yref='paper',
+            text='Senders',
+            showarrow=False,
+            font=dict(size=16, color='#1f77b4')  # Blue to match category
+        ),
+        dict(
+            x=0.5,
+            y=1.05,
+            xref='paper',
+            yref='paper',
+            text='Converting Agents',
+            showarrow=False,
+            font=dict(size=16, color='#2ca02c')  # Green to match category
+        ),
+        dict(
+            x=1,
+            y=1.05,
+            xref='paper',
+            yref='paper',
+            text='Creditor Banks',
+            showarrow=False,
+            font=dict(size=16, color='#ff7f0e')  # Orange to match category
+        )
+    ]
+)
+
+fig.show()
