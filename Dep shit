@@ -1,0 +1,88 @@
+import pandas as pd
+import plotly.graph_objects as go
+import numpy as np
+
+# Sample data preparation (replace with your actual DataFrame)
+# df_converted_after = pd.read_csv('your_data.csv') 
+data = {
+    'Sender': ['Stable Bank Zamba Ltd.', 'FirstBank Bank Limited', 'Commonwealth Bank of Australia', 'LUOIDS'] * 25,
+    'Converting Agent': ['LUOIDS', 'CUA DE ANDROSO DE POLLENSA', 'Commonwealth Bank of Australia', 'FirstBank Bank Limited'] * 25,
+    'Creditor Bank': ['CUA DE ANDROSO DE POLLENSA', 'LUOIDS', 'Stable Bank Zamba Ltd.', 'Commonwealth Bank of Australia'] * 25
+}
+df_converted_after = pd.DataFrame(data)
+
+# Get top 10 values for each column
+top_10_sender = df_converted_after['Sender'].value_counts().nlargest(10).index.tolist()
+top_10_converting = df_converted_after['Converting Agent'].value_counts().nlargest(10).index.tolist()
+top_10_creditor = df_converted_after['Creditor Bank'].value_counts().nlargest(10).index.tolist()
+
+# Filter DataFrame to include only top 10 entries
+filtered = df_converted_after[
+    df_converted_after['Sender'].isin(top_10_sender) &
+    df_converted_after['Converting Agent'].isin(top_10_converting) &
+    df_converted_after['Creditor Bank'].isin(top_10_creditor)
+]
+
+# Create node labels (all top 10 categories combined)
+node_labels = top_10_sender + top_10_converting + top_10_creditor
+
+# Map node names to indices
+node_indices = {label: idx for idx, label in enumerate(node_labels)}
+
+# Prepare link data
+links = []
+
+# Sender -> Converting Agent flows
+sender_converting = filtered.groupby(['Sender', 'Converting Agent']).size().reset_index(name='count')
+for _, row in sender_converting.iterrows():
+    links.append({
+        'source': node_indices[row['Sender']],
+        'target': node_indices[row['Converting Agent']],
+        'value': row['count']
+    })
+
+# Converting Agent -> Creditor Bank flows
+converting_creditor = filtered.groupby(['Converting Agent', 'Creditor Bank']).size().reset_index(name='count')
+for _, row in converting_creditor.iterrows():
+    links.append({
+        'source': node_indices[row['Converting Agent']],
+        'target': node_indices[row['Creditor Bank']],
+        'value': row['count']
+    })
+
+# Node positions (vertical layout)
+x_pos = [0] * len(top_10_sender) + [0.5] * len(top_10_converting) + [1] * len(top_10_creditor)
+y_pos = np.linspace(0.01, 0.99, num=10).tolist() * 3  # Evenly spaced vertical positions
+
+# Create Sankey diagram
+fig = go.Figure(go.Sankey(
+    node=dict(
+        pad=20,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=node_labels,
+        x=x_pos,
+        y=y_pos,
+        hovertemplate='%{label}<br>Count: %{value}<extra></extra>'
+    ),
+    link=dict(
+        source=[link['source'] for link in links],
+        target=[link['target'] for link in links],
+        value=[link['value'] for link in links],
+        hovertemplate='%{source.label} → %{target.label}<br>Count: %{value}<extra></extra>'
+    ),
+    arrangement='fixed',  # Maintain specified node positions
+    orientation='h'      # Horizontal orientation for vertical bars
+))
+
+# Update layout for vertical appearance
+fig.update_layout(
+    title='Flow: Sender → Converting Agent → Creditor Bank (Top 10)',
+    font=dict(size=12),
+    height=700,
+    width=800,
+    xaxis=dict(showgrid=False, zeroline=False, visible=False),
+    yaxis=dict(showgrid=False, zeroline=False, visible=False)
+)
+
+fig.show()
