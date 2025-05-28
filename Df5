@@ -1,0 +1,199 @@
+import pandas as pd
+import plotly.graph_objects as go
+import numpy as np
+
+# Sample data preparation (replace with your actual DataFrame)
+data = {
+    'Sender': ['Stable Bank Zamba Ltd.', 'FirstBank Bank Limited', 'Commonwealth Bank of Australia', 'Lloyds'] * 25,
+    'Converting Agent': ['Lloyds', 'CUA DE ANDROSO DE POLLENSA', 'Commonwealth Bank of Australia', 'FirstBank Bank Limited'] * 25,
+    'Creditor Bank': ['CUA DE ANDROSO DE POLLENSA', 'Lloyds', 'Stable Bank Zamba Ltd.', 'Commonwealth Bank of Australia'] * 25
+}
+df_converted_after = pd.DataFrame(data)
+
+# Get top 10 values for each column
+top_10_sender = df_converted_after['Sender'].value_counts().nlargest(10).index.tolist()
+top_10_converting = df_converted_after['Converting Agent'].value_counts().nlargest(10).index.tolist()
+top_10_creditor = df_converted_after['Creditor Bank'].value_counts().nlargest(10).index.tolist()
+
+# Filter DataFrame to include only top 10 entries
+filtered = df_converted_after[
+    df_converted_after['Sender'].isin(top_10_sender) &
+    df_converted_after['Converting Agent'].isin(top_10_converting) &
+    df_converted_after['Creditor Bank'].isin(top_10_creditor)
+]
+
+# Create node labels
+node_labels = top_10_sender + top_10_converting + top_10_creditor
+
+# Create dictionaries for node positions
+sender_dict = {name: i for i, name in enumerate(top_10_sender)}
+converting_dict = {name: i + len(top_10_sender) for i, name in enumerate(top_10_converting)}
+creditor_dict = {name: i + len(top_10_sender) + len(top_10_converting) for i, name in enumerate(top_10_creditor)}
+
+# Prepare link data
+links = []
+
+# Sender -> Converting Agent flows
+sender_converting = filtered.groupby(['Sender', 'Converting Agent']).size().reset_index(name='count')
+for _, row in sender_converting.iterrows():
+    links.append({
+        'source': sender_dict[row['Sender']],
+        'target': converting_dict[row['Converting Agent']],
+        'value': row['count']
+    })
+
+# Converting Agent -> Creditor Bank flows
+converting_creditor = filtered.groupby(['Converting Agent', 'Creditor Bank']).size().reset_index(name='count')
+for _, row in converting_creditor.iterrows():
+    links.append({
+        'source': converting_dict[row['Converting Agent']],
+        'target': creditor_dict[row['Creditor Bank']],
+        'value': row['count']
+    })
+
+# Enterprise color scheme with special handling for Lloyds
+def get_node_color(label):
+    """Return specific color for Lloyds, category-based for others"""
+    if "lloyds" in label.lower():
+        return "#24a148"  # Special green for Lloyds
+    else:
+        # Return category-based color
+        return {
+            "sender": "#0f62fe",  # IBM Blue
+            "converting": "#6929c4",  # IBM Purple
+            "creditor": "#ff832b"   # IBM Orange
+        }
+
+# Create color list for all nodes
+node_colors = []
+for i, label in enumerate(node_labels):
+    if i < len(top_10_sender):
+        node_colors.append(get_node_color(label)["sender"])
+    elif i < len(top_10_sender) + len(top_10_converting):
+        node_colors.append(get_node_color(label)["converting"])
+    else:
+        node_colors.append(get_node_color(label)["creditor"])
+
+# Calculate vertical positions with increased spacing
+def calculate_positions(n, offset=0, spacing_factor=1.0):
+    """Calculate positions with adjustable spacing"""
+    if n <= 1:
+        return [0.5 + offset]
+    return [offset + i * (1.0 / (n * spacing_factor)) * spacing_factor for i in range(n)]
+
+# Positions with extra space for Converting Agents
+y_sender = calculate_positions(len(top_10_sender), spacing_factor=0.9)
+y_converting = calculate_positions(len(top_10_converting), spacing_factor=1.2)  # More space
+y_creditor = calculate_positions(len(top_10_creditor), spacing_factor=0.9)
+
+# Combine all y positions and normalize
+all_y = y_sender + y_converting + y_creditor
+min_y, max_y = min(all_y), max(all_y)
+normalized_y = [(y - min_y) / (max_y - min_y) for y in all_y]
+
+# Create Sankey diagram with vertical orientation
+fig = go.Figure(go.Sankey(
+    node=dict(
+        pad=50,  # Increased padding
+        thickness=20,
+        line=dict(color="#333333", width=1),
+        label=node_labels,
+        color=node_colors,
+        x=[0] * len(top_10_sender) + [0.5] * len(top_10_converting) + [1] * len(top_10_creditor),
+        y=normalized_y,
+        hovertemplate='<b>%{label}</b><br>Count: %{value}<extra></extra>'
+    ),
+    link=dict(
+        source=[link['source'] for link in links],
+        target=[link['target'] for link in links],
+        value=[link['value'] for link in links],
+        color="rgba(150, 150, 150, 0.15)",  # Very subtle gray
+        hoverinfo='all',
+        hovertemplate='<b>%{source.label} → %{target.label}</b><br>Transactions: %{value}<extra></extra>'
+    ),
+    arrangement="freeform",
+    orientation="h"
+))
+
+# Update layout with professional styling
+fig.update_layout(
+    title=dict(
+        text='TRANSACTION FLOW ANALYSIS',
+        x=0.5,
+        y=0.98,
+        xanchor='center',
+        font=dict(size=24, family="Arial", color="#152536")
+    ),
+    font=dict(size=12, family="Arial", color="#4d4d4d"),
+    height=1200,  # Increased height for better spacing
+    width=1200,
+    xaxis=dict(showgrid=False, zeroline=False, visible=False),
+    yaxis=dict(showgrid=False, zeroline=False, visible=False),
+    plot_bgcolor='white',
+    paper_bgcolor='white',
+    margin=dict(t=150, b=80, l=60, r=60),
+    annotations=[
+        dict(
+            x=0,
+            y=1.08,
+            xref='paper',
+            yref='paper',
+            text='SENDERS',
+            showarrow=False,
+            font=dict(size=16, color="#0f62fe")
+        ),
+        dict(
+            x=0.5,
+            y=1.08,
+            xref='paper',
+            yref='paper',
+            text='CONVERTING AGENTS',
+            showarrow=False,
+            font=dict(size=16, color="#6929c4")
+        ),
+        dict(
+            x=1,
+            y=1.08,
+            xref='paper',
+            yref='paper',
+            text='CREDITOR BANKS',
+            showarrow=False,
+            font=dict(size=16, color="#ff832b")
+        ),
+        dict(
+            x=0.5,
+            y=1.14,
+            xref='paper',
+            yref='paper',
+            text='Top 10 Entities in Payment Processing Workflow',
+            showarrow=False,
+            font=dict(size=18, color="#393939")
+        )
+    ]
+)
+
+# Add legend for Lloyds
+fig.add_annotation(
+    x=0.98, y=0.02,
+    xref='paper', yref='paper',
+    text="<span style='color:#24a148'>●</span> Lloyds Entities",
+    showarrow=False,
+    font=dict(size=14, color="#4d4d4d"),
+    align="right",
+    bgcolor="rgba(255,255,255,0.7)",
+    bordercolor="#e0e0e0",
+    borderwidth=1,
+    borderpad=4
+)
+
+# Add data source footnote
+fig.add_annotation(
+    x=0.5, y=-0.1,
+    xref='paper', yref='paper',
+    text="Data Source: Enterprise Transaction Processing System | Generated: " + pd.Timestamp.now().strftime("%Y-%m-%d"),
+    showarrow=False,
+    font=dict(size=12, color="#8a8a8a"),
+    align="center"
+)
+
+fig.show()
