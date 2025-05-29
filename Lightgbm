@@ -1,0 +1,176 @@
+import pandas as pd
+import numpy as np
+from lightgbm import LGBMClassifier
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_predict
+from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score, 
+                            confusion_matrix, classification_report)
+from sklearn.preprocessing import LabelEncoder
+from imblearn.over_sampling import SMOTE
+from imblearn.pipeline import make_pipeline
+import optuna
+
+# 1. Advanced Data Preparation
+def preprocess_data(df):
+    # Handle missing values
+    df = df.fillna('MISSING')
+    
+    # Convert datetime features to useful components
+    datetime_cols = df.select_dtypes(include='datetime64[ns]').columns
+    for col in datetime_cols:
+        df[f'{col}_year'] = df[col].dt.year
+        df[f'{col}_month'] = df[col].dt.month
+        df[f'{col}_day'] = df[col].dt.day
+        df = df.drop(columns=[col])
+    
+    # Target encoding for high-cardinality features
+    high_card_cols = ['Sender_acc_no', 'Bene_acc_no', 'CREDITOR_AGENT_NR']
+    for col in high_card_cols:
+        if col in df.columns:
+            mean_encoding = df.groupby(col)['Bene_Currency'].mean()
+            df[f'{col}_encoded'] = df[col].map(mean_encoding)
+            df = df.drop(columns=[col])
+    
+    return df
+
+# Preprocess data
+dtf = preprocess_data(dtf)
+
+# 2. Handle Class Imbalance
+X = dtf.drop(columns=['Bene_Currency'])
+y = dtf['Bene_Currency']
+
+# Encode labels
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+
+# Split data BEFORE handling imbalance
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y_encoded, test_size=0.2, stratify=y_encoded, random_state=42
+)
+
+# Apply SMOTE ONLY to training data
+smote = SMOTE(sampling_strategy='auto', k_neighbors=5, random_state=42)
+X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
+
+# 3. Hyperparameter Optimization with Optuna
+def objective(trial):
+    params = {
+        'objective': 'multiclass',
+        'metric': 'multi_logloss',
+        'boosting_type': 'gbdt',
+        'num_class': len(np.unique(y_train_res)),
+        'num_leaves': trial.suggest_int('num_leaves', 20, 300),
+        'max_depth': trial.suggest_int('max_depth', 3, 12),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+        'min_child_samples': trial.suggest_int('min_child_samples', 5, 100),
+        'subsample': trial.suggest_float('subsample', 0.7, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.7, 1.0),
+        'reg_alpha': trial.suggest_float('reg_alpha', 0, 10),
+        'reg_lambda': trial.suggest_float('reg_lambda', 0, 10),
+        'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
+        'class_weight': 'balanced',
+        'random_state': 42,
+        'force_row_wise': True
+    }
+    
+    model = LGBMClassifier(**params)
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    
+    val_scores = []
+    for train_idx, val_idx in skf.split(X_train_res, y_train_res):
+        X_fold_train, y_fold_train = X_train_res.iloc[train_idx], y_train_res[train_idx]
+        X_fold_val, y_fold_val = X_train_res.iloc[val_idx], y_train_res[val_idx]
+        
+        model.fit(
+            X_fold_train, y_fold_train,
+            eval_set=[(X_fold_val, y_fold_val)],
+            early_stopping_rounds=50,
+            verbose=0
+        )
+        preds = model.predict(X_fold_val)
+        f1 = f1_score(y_fold_val, preds, average='weighted')
+        val_scores.append(f1)
+    
+    return np.mean(val_scores)
+
+# Run optimization
+study = optuna.create_study(direction='maximize')
+study.optimize(objective, n_trials=50, show_progress_bar=True)
+
+# 4. Train Best Model
+best_params = study.best_params
+best_params.update({
+    'objective': 'multiclass',
+    'metric': 'multi_logloss',
+    'num_class': len(np.unique(y_train_res)),
+    'class_weight': 'balanced',
+    'random_state': 42,
+    'force_row_wise': True
+})
+
+final_model = LGBMClassifier(**best_params)
+final_model.fit(
+    X_train_res, y_train_res,
+    eval_set=[(X_test, y_test)],
+    early_stopping_rounds=50,
+    verbose=1
+)
+
+# 5. Advanced Evaluation
+y_pred = final_model.predict(X_test)
+
+print("\n⭐ Enhanced Classification Report:")
+print(classification_report(y_test, y_pred, target_names=le.classes_, zero_division=0))
+
+print("\n⭐ Confusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+# 6. Feature Importance Analysis
+feature_importances = pd.DataFrame({
+    'Feature': X.columns,
+    'Importance': final_model.feature_importances_
+}).sort_values('Importance', ascending=False)
+
+print("\n⭐ Top 10 Features:")
+print(feature_importances.head(10))
+
+# 7. Threshold Tuning (for precision/recall balance)
+from sklearn.metrics import precision_recall_curve
+
+probabilities = final_model.predict_proba(X_test)
+precision_dict = {}
+recall_dict = {}
+
+for i, class_name in enumerate(le.classes_):
+    class_idx = le.transform([class_name])[0]
+    class_probs = probabilities[:, class_idx]
+    
+    precisions, recalls, thresholds = precision_recall_curve(
+        (y_test == class_idx).astype(int), 
+        class_probs
+    )
+    
+    # Find best threshold for F1 score
+    f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-9)
+    best_idx = np.argmax(f1_scores)
+    
+    precision_dict[class_name] = precisions[best_idx]
+    recall_dict[class_name] = recalls[best_idx]
+    
+    print(f"\n⭐ Class {class_name} - Best Threshold: {thresholds[best_idx]:.4f}")
+    print(f"Precision: {precisions[best_idx]:.4f}, Recall: {recalls[best_idx]:.4f}")
+
+# 8. Ensemble Option (Uncomment to use)
+# from sklearn.ensemble import VotingClassifier
+# from xgboost import XGBClassifier
+# from catboost import CatBoostClassifier
+
+# estimators = [
+#     ('lgbm', final_model),
+#     ('xgb', XGBClassifier(use_label_encoder=False, eval_metric='mlogloss')),
+#     ('cat', CatBoostClassifier(verbose=0))
+# ]
+
+# ensemble = VotingClassifier(estimators, voting='soft')
+# ensemble.fit(X_train_res, y_train_res)
+# ensemble_pred = ensemble.predict(X_test)
