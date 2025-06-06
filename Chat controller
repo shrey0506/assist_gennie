@@ -1,0 +1,53 @@
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from app.database import SessionLocal
+from app.models.chat_history import ChatHistory
+from app.services.chat_service import call_model_with_flash
+
+router = APIRouter()
+
+class PromptRequest(BaseModel):
+    session_id: str
+    prompt: str
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@router.post("/generate-code/")
+def generate_code(request: PromptRequest, db: Session = Depends(get_db)):
+    try:
+        response = call_model_with_flash(request.prompt)
+
+        chat_entry = ChatHistory(
+            session_id=request.session_id,
+            user_input=request.prompt,
+            response=response
+        )
+        db.add(chat_entry)
+        db.commit()
+        db.refresh(chat_entry)
+
+        return {
+            "id": chat_entry.id,
+            "session_id": chat_entry.session_id,
+            "response": chat_entry.response
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/chat-history/{session_id}")
+def get_history(session_id: str, db: Session = Depends(get_db)):
+    history = db.query(ChatHistory).filter(ChatHistory.session_id == session_id).all()
+    return [
+        {
+            "id": h.id,
+            "prompt": h.user_input,
+            "response": h.response,
+            "timestamp": h.timestamp
+        } for h in history
+    ]
