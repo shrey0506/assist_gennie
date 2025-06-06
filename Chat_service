@@ -1,0 +1,14 @@
+def call_model_with_flash(user_prompt: str) -> str:
+    config_params = {
+        "endpoint_name": "gemini-1.5-flash",
+        "contents": user_prompt,
+        "temperature": 0.8,
+        "top_k": 20,
+        "top_p": 0.95,
+        "max_output_tokens": 512,
+        "stop_sequences": [],
+        "system_instruction": "You are a senior developer. Your mission is to generate production-ready code with validation."
+    }
+
+    # Simulated model response
+    return f"# Generated code for: {user_prompt}\ndef fibonacci(n): ..."
